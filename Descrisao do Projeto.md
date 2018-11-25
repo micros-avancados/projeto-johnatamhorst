@@ -10,7 +10,7 @@
 
 ## 2. Diagrama:
 
-![](C:\Users\Johnatam Renan Horst\Documents\TCC\diagrama.png)  
+![](C:\Users\Johnatam Renan Horst\Documents\GitHub\projeto-johnatamhorst\diagrama.png)  
 
 
 
