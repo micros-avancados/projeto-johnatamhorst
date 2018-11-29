@@ -19,19 +19,23 @@
 #include <WiFiClient.h>
 #include <PubSubClient.h>
 #include <EEPROM.h>
+#include <SD.h>
 //Wifi Acess Point/Roteador da rede wifi
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
 //MQTT 
-String brokerUrl   = "192.168.0.107";        //URL do broker MQTT 
+String brokerUrl   = "192.168.0.190";        //URL do broker MQTT 
 String brokerPort  = "1883";                 //Porta do Broker MQTT
 String brokerID    = "IHM";
-String brokerUser  =  "IHM";                 //Usuário Broker MQTT
-String brokerPWD   = "IHM";                  //Senha Broker MQTT
-String topicSubscrive = "IHM";                //Topico de subscrive da IHM
-String brokerTopic = "as";                  //Topico
-String topicSubscriveControle = "CONTROLE";      //Topico de cubscrive do sensor
-String topicSubscriveSensor = "SENSOR";      //Topico de cubscrive do sensor
+String brokerUser  =  "";                                   //Usuário Broker MQTT
+String brokerPWD   = "";                                    //Senha Broker MQTT                 
+String topicSubscrive = "IHM/#";                            //Topico de cubscrive do generico
+String topicPubControleSetpoint = "CONTROLE/SETPOINT";      //lembra se for no nodeMCU colocar p $ no final      
+String topicPubControleStart = "CONTROLE/START"; 
+String topicSubTempoTotal = "IHM/TEMPO_TOTAL";                  
+String topicSubTempoRestante = "IHM/TEMPO_RESTANTE";
+String topicSubStatus = "IHM/STATUS";
+String topicSubNivel = "IHM/NIVEL"; 
 //Acess Point ssid e pwd
 const char* ssid_config = "Configuration Module";     //ssid REDE WIFI para configuração
 const char* password_config = "espadmin";             //senha REDE WIFI para configuração
@@ -76,7 +80,9 @@ String tempoTotal = "00:01:00";         //Preset de tempo total de 1hora
 bool sensorHigh = false;                //Preset false no sensor de nivel High
 bool sensorLow = false;                 //Preset false no sensor de nivel Low
 int litrosTanque = 50;                  //Preset de 50 litros total do tanque
-int nivelTanque = 50;                    //Preset de 0% de nivel no tanque
+int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
+int statusTanque = 50;
+bool start = false;
 #define topicoSubscrive "IHM"
 //funcao setup
 void setup(){
@@ -96,7 +102,6 @@ void setup(){
       EEPROM.put(100, brokerID);
       EEPROM.put(120, brokerUser);
       EEPROM.put(140, brokerPWD);
-      EEPROM.put(160, brokerTopic);
       EEPROM.put(180, userConfig);
       EEPROM.put(200, pwdConfig);
       EEPROM.commit();
@@ -110,7 +115,6 @@ void setup(){
       EEPROM.get(100, brokerID);
       EEPROM.get(120, brokerUser);
       EEPROM.get(140, brokerPWD);
-      EEPROM.get(160, brokerTopic);
       EEPROM.get(180, userConfig);
       EEPROM.get(200, pwdConfig);
       EEPROM.end();
@@ -129,7 +133,8 @@ void loop(){
       MQTT();
       MQTTServer.loop();           
     }
-    niveisTela(nivelTanque);
+    nivelTela(nivelTanque);
+    statusTela(statusTanque,true);
     char key = keypad.getKey();
     tecla=key;
     if (key) {
@@ -221,8 +226,8 @@ void MQTT(){
         return;
       }                        
     }
-    MQTTServer.subscribe(topicSubscriveControle.c_str(),0);
-    if(MQTTServer.subscribe(topicSubscriveSensor.c_str(),0)){
+    //MQTTServer.subscribe(topicSubscriveControle.c_str(),0);
+    if(MQTTServer.subscribe(topicSubscrive.c_str(),0)){
       Serial.println("SUBSCRIVE ok!!");
     }else{
       Serial.println("ERRO SUBSCRIVE");
@@ -265,53 +270,54 @@ void subscrive(char* topic, byte* payload, unsigned int length){
   String msg;
   String aux;
   int valor;
+  int i=0;
+  while((char(topic[i])) != '$'){
+    topico += (char)topic[i];
+    i++;
+  }
 
-  for(int i = 0; i <= length; i++){                  //Transforma o topico String Para manipulação
-     resposta[i] = (char)topic[i];
-     topico += resposta[i];
-     }
-  Serial.println(topico);
   for(int i = 0; i <= length; i++){                  //Transforma a mensagem recebida em String Para manipulação
      resposta[i] = (char)payload[i];
      msg += resposta[i];
      }
-    
-  if(topico == topicSubscriveControle){                     //Mensagem do Modulo de Controle
-     for(int i = 0; i <= 7; i++){                   //Transforma a mensagem recebida em String Para manipulação
-     resposta[i] = (char)payload[i];
-     msg += resposta[i];
-     }     
-     tempoRestante = msg;                           //armagena o tempo restante, somente 1 informação   
-     for(int i = 8; i <= length; i++){               //Transforma a mensagem recebida em String Para manipulação
-     resposta[i] = (char)payload[i];
-     msg += resposta[i];
-     }
-     tempoTotal = msg;                              //armagena o tempo total, somente 1 informação                                
-    //######Salva tempo Restante
-    //######Salva tempo Total
+//int setPoint = 0;                       //Preset de SetPoint 
+//String tempoRestante = "00:00:00";      //Preset de 0 tempo;
+//String tempoTotal = "00:01:00";         //Preset de tempo total de 1hora
+//bool sensorHigh = false;                //Preset false no sensor de nivel High
+//bool sensorLow = false;                 //Preset false no sensor de nivel Low
+//int litrosTanque = 50;                  //Preset de 50 litros total do tanque
+//int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
+//int statusTanque = 50;
+//String topicSubTempoTotal = "IHM/TEMPO_TOTAL";                  
+//String topicSubTempoRestante = "IHM/TEMPO_RESTANTE";
+//String topicSubStatus = "IHM/STATUS";
+//String topicSubNivel = "IHM/NIVEL";    
+  if(topico == topicSubNivel){                     //Mensagem do Modulo de Controle
+      nivelTanque = atoi(msg.c_str());
   }
-  
-  if(topico == topicSubscriveSensor){               //Mensagem do Modulo Sensor
-    for(int i = 0; i <= 2; i++){                     //Obtem somente informação de nivel, posição(1,2,3)                
-      aux += (char)msg[i];
-    }
-    Serial.println(atoi(aux.c_str()));
-    nivelTanque = atoi(aux.c_str());
-    sensorLow = bool(msg[4]);
-    sensorHigh = bool(msg[5]);
-    for(int i = 6; i <= length; i++){                  //Transforma a mensagem recebida em String Para manipulação
-      resposta[i] = (char)payload[i];
-      aux += resposta[i];
-    }
-    litrosTanque = atoi(aux.c_str());
-    
-    //######Salva nivel
-    //######Salva sensor nivel Low
-    //######Salva sensor nivel HIGH
-  }  
+   if(topico == topicSubStatus){                     //Mensagem do Modulo de Controle
+      statusTanque = atoi(msg.c_str());
+      Serial.println(statusTanque);
+  }
+   if(topico == topicSubTempoTotal){                     //Mensagem do Modulo de Controle
+      tempoTotal = msg;
+  }
+   if(topico == topicSubTempoRestante){                     //Mensagem do Modulo de Controle
+      tempoRestante = msg;
+  }
+   if(topico == topicSubNivel){                     //Mensagem do Modulo de Controle
+      statusTanque = atoi(msg.c_str());;
+  }
 }
 ////*****************CONTROLA O NIVEL DA TELA*********************************
-void niveisTela(int nivelTanque){
+void nivelTela(int nivelTanque){
+
+  //resolver problema com o 100
+  if(nivelTanque >= 100){
+      nivelTanque = 99;
+  }else if(nivelTanque<0){
+      nivelTanque=0;
+  }
   tft.fillEllipse(170, 180, 30, 10, TFT_BLUE);
   int nivel = map(nivelTanque,0,100,175,30);         //nivel do Tanque vem em Porcentagem  
     for(int i = 175; i > nivel; i--){                  //for para atualizar nivel no tubo                          
@@ -321,10 +327,26 @@ void niveisTela(int nivelTanque){
     tft.fillEllipse(170, i, 40, 10, TFT_WHITE);
     }
     tft.fillEllipse(170, 26, 50, 20, TFT_BLACK);
-    tft.fillEllipse(170, 26, 30, 10, TFT_WHITE);
-  
-  
-  
+    tft.fillEllipse(170, 26, 30, 10, TFT_WHITE);  
+}
+void statusTela(int statusTanque, bool start){
+//    
+//    tft.fillRect(10, 270, 220, 30, TFT_BLACK);                //retangulo de porcentagem
+//    tft.fillRect(12, 272, 216, 26, TFT_WHITE);
+  if(statusTanque >= 100){
+      statusTanque = 99;
+  }else if(statusTanque<0){
+      statusTanque=0;
+  }
+  if(start){
+    Serial.print("Status Tanque: ");
+    statusTanque = map(statusTanque,0,100,12,216);
+    Serial.print(statusTanque);
+    tft.fillRect(12, 272, statusTanque, 26, TFT_BLUE);
+    tft.fillRect(12 + statusTanque, 272 , 216 - statusTanque, 26, TFT_WHITE);
+  }else{
+    tft.fillRect(10, 270, 220, 30, TFT_BLACK);  
+  }
 }
 
 ////*****************CONTROLA A TELA*********************************
@@ -340,7 +362,7 @@ void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String te
     tft.fillEllipse(170, 180, 50, 20, TFT_BLACK);
     tft.fillEllipse(170, 180, 30, 10, TFT_WHITE);
     
-    niveisTela(nivelTanque);
+    nivelTela(nivelTanque);
     
     tft.setTextSize(2);
     tft.setCursor(10,10);
@@ -439,7 +461,6 @@ void handle_setup_page(){
   EEPROM.get(100, brokerID);
   EEPROM.get(120, brokerUser);
   EEPROM.get(140, brokerPWD);
-  EEPROM.get(160, brokerTopic);
   EEPROM.get(180, userConfig);
   EEPROM.get(200, pwdConfig);
   EEPROM.end();
@@ -485,10 +506,7 @@ void handle_setup_page(){
   html += "<form method='POST' action='/'>";
   html += "<input type=text name=brokerPWD placeholder='" + brokerPWD + "'/> ";    
   
-  html += "<p>Topico</p>";                                                          //campo para obter password da rede wifi com acesso a internet
-  html += "<form method='POST' action='/'>";
-  html += "<input type=text name=brokerTopic placeholder='" + brokerTopic + "'/> ";    
-  
+ 
   html += "<p>Acess User</p>";                                                          //campo para obter password da rede wifi com acesso a internet
   html += "<form method='POST' action='/'>";
   html += "<input type=text name=userConfig placeholder='" + userConfig + "'/> ";    
@@ -537,9 +555,7 @@ void handle_setup_page(){
   if(server.arg("brokerPWD") != ""){
     brokerPWD   = server.arg("brokerPWD");
   }
-  if(server.arg("brokerTopic") != ""){
-    brokerTopic = server.arg("brokerTopic");
-  }
+  
   if(server.arg("userConfig") != ""){
     userConfig  = server.arg("userConfig");
   }
@@ -554,7 +570,6 @@ void handle_setup_page(){
   EEPROM.put(100, brokerID);
   EEPROM.put(120, brokerUser);
   EEPROM.put(140, brokerPWD);
-  EEPROM.put(160, brokerTopic);
   EEPROM.put(180, userConfig);
   EEPROM.put(200, pwdConfig);
   EEPROM.commit();

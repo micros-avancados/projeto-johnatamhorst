@@ -28,7 +28,7 @@
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
 //MQTT 
-String brokerUrl   = "192.168.0.107";                                 //URL do broker MQTT 
+String brokerUrl   = "192.168.0.103";                                 //URL do broker MQTT 
 String brokerPort  = "1883";                                          //Porta do Broker MQTT
 String brokerID    = "IHM";
 String brokerUser  =  "IHM";                                          //Usuário Broker MQTT
@@ -66,7 +66,7 @@ void setup(){
     pinMode(buttonConf,INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(buttonConf),confInterrupt,RISING);
     EEPROM.begin(512);
-    if(digitalRead(resetParametros) > 200){      ///esquema pois tive q resetar modulo para conectar ao broker depois de confgurado
+    if(digitalRead(resetParametros) == true){      ///esquema pois tive q resetar modulo para conectar ao broker depois de confgurado
       EEPROM.put(0, ssid_AP);       //se ageitar config exluir este botao e esta logica
       EEPROM.put(20, password_AP);
       EEPROM.put(40, password_AP);
