@@ -28,12 +28,11 @@
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
 //MQTT 
-String brokerUrl   = "192.168.0.103";                                 //URL do broker MQTT 
+String brokerUrl   = "192.168.0.190";                                 //URL do broker MQTT 
 String brokerPort  = "1883";                                          //Porta do Broker MQTT
-String brokerID    = "IHM";
-String brokerUser  =  "IHM";                                          //Usuário Broker MQTT
-String brokerPWD   = "IHM";                                           //Senha Broker MQTT
-String brokerTopic = "IHM";                                           //Topico
+String brokerID    = "SENSOR";
+String brokerUser  =  "";                                          //Usuário Broker MQTT
+String brokerPWD   = "";                                           //Senha Broker MQTT                                          //Topico
 String topicPubControleSensorHigh = "CONTROLE/SENSOR_HIGH";     //Topico de pubscrive do sensor nivel Alto do Tanque
 String topicPubControleSensorLow = "CONTROLE/SENSOR_LOW";       //Topico de pubscrive do sensor  nivel Baixo do Tanque
 String topicPubControleSensorNivel = "CONTROLE/SENSOR_NIVEL";   //Topico de pubscrive do sensor de nivel do Tanque
@@ -57,7 +56,7 @@ void MQTT();
 bool configuration = false;
 bool varSensorHigh = false;           //Preset false nivelTanque high do tanque
 bool varSensorLow = false;            //Preset False nivelTanque Low do Tanque
-float varVivelTanque = 0.0;        //Preset de nivel = 0.0
+int varNivelTanque = 25;        //Preset de nivel = 0.0
 String msg;
 void setup(){
     Serial.begin(9600);
@@ -75,7 +74,6 @@ void setup(){
       EEPROM.put(100, brokerID);
       EEPROM.put(120, brokerUser);
       EEPROM.put(140, brokerPWD);
-      EEPROM.put(160, brokerTopic);
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
@@ -91,7 +89,6 @@ void setup(){
       EEPROM.get(100, brokerID);
       EEPROM.get(120, brokerUser);
       EEPROM.get(140, brokerPWD);
-      EEPROM.get(160, brokerTopic);
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
@@ -110,9 +107,19 @@ void loop(){
       Wi_Fi();
       MQTT();
       MQTTServer.loop();
-      MQTTServer.publish(topicPubControleSensorHigh.c_str(), String(digitalRead(sensorHigh)).c_str() );
-      MQTTServer.publish(topicPubControleSensorLow.c_str(), String(digitalRead(sensorLow)).c_str() );
-      MQTTServer.publish(topicPubControleSensorNivel.c_str(), String(map(analogRead(nivelTanque),0,1024,0,100)).c_str() );
+      varSensorLow = !digitalRead(sensorHigh);
+      varSensorHigh = !digitalRead(sensorLow);
+      varNivelTanque = map(analogRead(nivelTanque),0,1024,0,100);
+      Serial.print("Sensor High: ");
+      Serial.println(varSensorHigh);                     //Mensagem do Modulo de Controle
+      Serial.print("SensorLow: ");
+      Serial.println(varSensorLow);
+      Serial.print("Nivel: ");
+      Serial.println(varNivelTanque);
+  
+      MQTTServer.publish(topicPubControleSensorHigh.c_str(), String(varSensorHigh).c_str() );
+      MQTTServer.publish(topicPubControleSensorLow.c_str(), String(varSensorLow).c_str() );
+      MQTTServer.publish(topicPubControleSensorNivel.c_str(), String(varNivelTanque).c_str() );
       delay(1000);
     }
     
@@ -126,11 +133,8 @@ void confInterrupt(){
 //**************FUNÇÃO QUE VERIFICA AUTENTIFICAÇÃO DE LOGIN******************************
 //retorna true e false conforme o cookie estiver com o ID correto
 bool is_authentified() {
-  Serial.println("Enter is_authentified");
   if (server.hasHeader("Cookie")) {
-    Serial.print("Found cookie: ");
     String cookie = server.header("Cookie");
-    Serial.println(cookie);
     if (cookie.indexOf("ESPSESSIONID=1") != -1) {           
       Serial.println("Authentification Successful");
       return true;
@@ -181,7 +185,6 @@ void handle_setup_page(){
   EEPROM.get(100, brokerID);
   EEPROM.get(120, brokerUser);
   EEPROM.get(140, brokerPWD);
-  EEPROM.get(160, brokerTopic);
   EEPROM.get(180, user_config);
   EEPROM.get(200, pwd_config);
   EEPROM.get(220, ssid_config);
@@ -310,7 +313,7 @@ void handle_setup_page(){
   EEPROM.put(200, pwd_config);
   EEPROM.commit();
   EEPROM.end();
-  Serial.println(ssid_AP);
+  //Serial.println(ssid_AP);
   configuration = false;
   WiFi.disconnect();
 }
@@ -339,8 +342,8 @@ void loop_config(){
 //******************FUNÇÃO QUE CONECTA AO BROKER MQTT*********************************** 
 void MQTT(){
   if(MQTTServer.connected() == 1 ){                                       //CONECTADO
-    Serial.println("MQTT Conectado!");    
-    Serial.print("Status: ");                                 //STATUS NAO OK
+    //Serial.println("MQTT Conectado!");    
+    //Serial.print("Status: ");                                 //STATUS NAO OK
     switch (MQTTServer.state()) {
       case -4:
         Serial.println("MQTT_CONNECTION_TIMEOUT");
@@ -355,7 +358,7 @@ void MQTT(){
         Serial.println("MQTT_DISCONNECTED");
       break;
       case 0:
-        Serial.println("MQTT_CONNECTED");
+        //Serial.println("MQTT_CONNECTED");
         return;
       break;
       case 1:
@@ -382,7 +385,7 @@ void MQTT(){
   }else if(MQTTServer.connected() == 0 ){                                 //DESCONECTADO
     InitMQTT:
     Serial.println("MQTT Desconectado!... Configuracao MQTT");
-    Serial.println(brokerUrl);
+    //Serial.println(brokerUrl);
     MQTTServer.setServer(brokerUrl.c_str(), atoi(brokerPort.c_str()));
     //MQTTServer.setCallback(subscrive);
     long timerMQTT = millis();
@@ -405,8 +408,8 @@ void Wi_Fi(){
     }
     delay(10);
     Serial.println("Configurando WiFi!"); 
-    Serial.print(ssid_AP);
-    Serial.println(password_AP);   
+    //Serial.print(ssid_AP);
+    //Serial.println(password_AP);   
     WiFi.begin(ssid_AP.c_str(), password_AP.c_str());                  // Conecta na rede WI-FI    
     long timerWifi = millis();
     while (WiFi.status() != WL_CONNECTED){
@@ -417,7 +420,7 @@ void Wi_Fi(){
       }
     }  
     Serial.print("Conectado com sucesso na rede: ");
-    Serial.println(ssid_AP);
+    //Serial.println(ssid_AP);
     Serial.print(" IP obtido: ");
     Serial.println(WiFi.localIP());
     return;

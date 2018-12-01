@@ -28,11 +28,11 @@
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
 //MQTT 
-String brokerUrl   = "192.168.0.107";        //URL do broker MQTT 
+String brokerUrl   = "192.168.0.190";        //URL do broker MQTT 
 String brokerPort  = "1883";                 //Porta do Broker MQTT
-String brokerID    = "IHM";
-String brokerUser  =  "IHM";                 //Usuário Broker MQTT
-String brokerPWD   = "IHM";                  //Senha Broker MQTT
+String brokerID    = "BOMBA";
+String brokerUser  =  "";                 //Usuário Broker MQTT
+String brokerPWD   = "";                  //Senha Broker MQTT
 String topicPubControleSensorVazao = "CONTROLE/SENSOR_VAZAO";     //Topico de pubscrive do sensor Vazao
 String topicSubBomba = "BOMBA/BOMBA";                  //Topico de subscrive da Bomba
 String topicSubValvula = "BOMBA/VALVULA";              //Topico de subscrive Valvula
@@ -56,19 +56,20 @@ void MQTT();
 bool configuration = false;
 bool varBomba = false;               //Preset False para Bomba
 bool varValvula = false;             //Preset False para Valvula
-unsigned float varVazao = 0.0;        //Preset de vazao = 0.0
-unsigned int auxVazao 0;
+float varVazao = 0.0;        //Preset de vazao = 0.0
+unsigned int auxVazao = 0;
 unsigned int tempo = 0;
 void setup(){
     Serial.begin(9600);
     pinMode(bomba,OUTPUT);
     pinMode(valvula,OUTPUT);
-    pinMode(vazao,OUTPUT);
-    pinMode(buttonConf,INPUT_PULLUP);
+    pinMode(vazao,INPUT);
+    //pinMode(buttonConf,INPUT_PULLUP);
+    pinMode(resetParametros, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(buttonConf),confInterrupt,RISING);
     attachInterrupt(digitalPinToInterrupt(vazao),vazaoInterrupt,RISING);
     EEPROM.begin(512);
-    if(digitalRead(resetParametros) > 200){      ///esquema pois tive q resetar modulo para conectar ao broker depois de confgurado
+    if(digitalRead(resetParametros) == true){      ///esquema pois tive q resetar modulo para conectar ao broker depois de confgurado
       EEPROM.put(0, ssid_AP);       //se ageitar config exluir este botao e esta logica
       EEPROM.put(20, password_AP);
       EEPROM.put(40, password_AP);
@@ -77,7 +78,6 @@ void setup(){
       EEPROM.put(100, brokerID);
       EEPROM.put(120, brokerUser);
       EEPROM.put(140, brokerPWD);
-      EEPROM.put(160, brokerTopic);
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
@@ -93,7 +93,6 @@ void setup(){
       EEPROM.get(100, brokerID);
       EEPROM.get(120, brokerUser);
       EEPROM.get(140, brokerPWD);
-      EEPROM.get(160, brokerTopic);
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
@@ -184,7 +183,6 @@ void handle_setup_page(){
   EEPROM.get(100, brokerID);
   EEPROM.get(120, brokerUser);
   EEPROM.get(140, brokerPWD);
-  EEPROM.get(160, brokerTopic);
   EEPROM.get(180, user_config);
   EEPROM.get(200, pwd_config);
   EEPROM.get(220, ssid_config);
@@ -307,7 +305,6 @@ void handle_setup_page(){
   EEPROM.put(100, brokerID);
   EEPROM.put(120, brokerUser);
   EEPROM.put(140, brokerPWD);
-  EEPROM.put(160, brokerTopic);
   EEPROM.put(180, user_config);
   EEPROM.put(200, pwd_config);
   EEPROM.put(220, ssid_config);
@@ -386,7 +383,7 @@ void MQTT(){
   }else if(MQTTServer.connected() == 0 ){                                 //DESCONECTADO
     InitMQTT:
     Serial.println("MQTT Desconectado!... Configuracao MQTT");
-    Serial.println(brokerUrl);
+    //Serial.println(brokerUrl);
     MQTTServer.setServer(brokerUrl.c_str(), atoi(brokerPort.c_str()));
     MQTTServer.setCallback(subscrive);
     long timerMQTT = millis();
@@ -398,6 +395,8 @@ void MQTT(){
         return;
       }                        
     }
+  }
+}
 //*****************************RECONECTA WI.FI*****************************************************
 //se já está conectado a rede WI-FI, nada é feito. 
 //Caso contrário, são efetuadas tentativas de conexão 
@@ -406,9 +405,10 @@ void Wi_Fi(){
       return;
     }
     delay(10);
-    Serial.println("Configurando WiFi!"); 
-    Serial.print(ssid_AP);
-    Serial.println(password_AP);   
+    
+    Serial.print("Configurando WiFi!: ");
+    
+    //Serial.println(ssid_AP);    
     WiFi.begin(ssid_AP.c_str(), password_AP.c_str());                  // Conecta na rede WI-FI    
     long timerWifi = millis();
     while (WiFi.status() != WL_CONNECTED){
@@ -418,8 +418,8 @@ void Wi_Fi(){
         return;
       }
     }  
-    Serial.print("Conectado com sucesso na rede: ");
-    Serial.println(ssid_AP);
+    Serial.print("Conectado com sucesso na rede ");
+    //Serial.println(ssid_AP);
     Serial.print(" IP obtido: ");
     Serial.println(WiFi.localIP());
     return;

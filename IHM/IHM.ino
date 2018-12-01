@@ -19,7 +19,7 @@
 #include <WiFiClient.h>
 #include <PubSubClient.h>
 #include <EEPROM.h>
-#include <SD.h>
+#include <Ticker.h>
 //Wifi Acess Point/Roteador da rede wifi
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
@@ -46,6 +46,7 @@ String pwdConfig  = "admin";
 TFT_eSPI tft = TFT_eSPI();
 WiFiClient espClient;
 PubSubClient MQTTServer(espClient);
+Ticker timeTela;
 ESP8266WebServer server(80);
 const byte ROWS = 4;                                  //linha do teclado Matricial
 const byte COLS = 3;                                  //Colunas do teclado matricial
@@ -91,7 +92,7 @@ void setup(){
     tft.init();
     tft.setRotation(2);    
     atualizaTela( setPoint, nivelTanque, tempoRestante, tempoTotal ,litrosTanque );
-
+    timeTela.attach(2,interruptTela);
     EEPROM.begin(512);
     if(analogRead(A0) > 200){      ///esquema pois tive q resetar modulo para conectar ao broker depois de confgurado
       EEPROM.put(0, ssid_AP);       //se ageitar config exluir este botao e esta logica
@@ -128,21 +129,32 @@ void loop(){
       configuration = true;
       loop_config();
       tecla='0';         
+    }if (tecla == 'E'){
+      setPoint = telaSetPoint();
+      Serial.println(setPoint);
+      //fazer teste de maximo limite do tanque aki 
+      
     }else{
       Wi_Fi();
       MQTT();
       MQTTServer.loop();           
     }
-    nivelTela(nivelTanque);
-    statusTela(statusTanque,true);
+    
+    //nivelTela(nivelTanque);
+    //statusTela(statusTanque,true);
     char key = keypad.getKey();
     tecla=key;
-    if (key) {
-        Serial.print(key);
+    Serial.print("Tecla: ");
+    Serial.println(tecla);
+    //if (key) {
+       // Serial.print(key);
         //MQTTServer.publish(topicSubscriveSensor.c_str(), String(key).c_str() );    
-    }
+    //}
 }
-
+void interruptTela(){
+  atualizaTela( setPoint, nivelTanque, tempoRestante, tempoTotal ,litrosTanque );
+  
+}
 //********************FUNÇÃO QUE EXECUTA A PARTE DE CONFIGURAÇÃO***********************
 void loop_config(){
     delay(2000);                                                        //2 segundos para filtrar ruido do botao
@@ -213,8 +225,8 @@ void MQTT(){
   }else if(MQTTServer.connected() == 0 ){                                 //DESCONECTADO
     InitMQTT:
     Serial.println("MQTT Desconectado!... Configuracao MQTT");
-    Serial.println(brokerUrl);
-    Serial.println(topicoSubscrive);
+    //Serial.println(brokerUrl);
+    //Serial.println(topicoSubscrive);
     MQTTServer.setServer(brokerUrl.c_str(), atoi(brokerPort.c_str()));
     MQTTServer.setCallback(subscrive);
     long timerMQTT = millis();
@@ -244,8 +256,8 @@ void Wi_Fi(){
     }
     delay(10);
     Serial.println("Configurando WiFi!"); 
-    Serial.print(ssid_AP);
-    Serial.println(password_AP);   
+    //Serial.print(ssid_AP);
+    //Serial.println(password_AP);    
     WiFi.begin(ssid_AP.c_str(), password_AP.c_str());                  // Conecta na rede WI-FI    
     long timerWifi = millis();
     while (WiFi.status() != WL_CONNECTED){
@@ -256,7 +268,7 @@ void Wi_Fi(){
       }
     }  
     Serial.print("Conectado com sucesso na rede: ");
-    Serial.println(ssid_AP);
+    //Serial.println(ssid_AP);
     Serial.print(" IP obtido: ");
     Serial.println(WiFi.localIP());
     return;
@@ -339,9 +351,7 @@ void statusTela(int statusTanque, bool start){
       statusTanque=0;
   }
   if(start){
-    Serial.print("Status Tanque: ");
     statusTanque = map(statusTanque,0,100,12,216);
-    Serial.print(statusTanque);
     tft.fillRect(12, 272, statusTanque, 26, TFT_BLUE);
     tft.fillRect(12 + statusTanque, 272 , 216 - statusTanque, 26, TFT_WHITE);
   }else{
@@ -362,8 +372,9 @@ void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String te
     tft.fillEllipse(170, 180, 50, 20, TFT_BLACK);
     tft.fillEllipse(170, 180, 30, 10, TFT_WHITE);
     
-    nivelTela(nivelTanque);
     
+    nivelTela(nivelTanque);
+    statusTela(statusTanque,true);
     tft.setTextSize(2);
     tft.setCursor(10,10);
     tft.println("SET-POINT");
@@ -392,10 +403,50 @@ void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String te
   
   }
 ////*****************escrever*********************************
+int telaSetPoint(){
+
+    int auxTecla = 1;
+    int teclaS;
+    char keyS;
+    int setPointS = 0;
+    while(tecla != 'E'){
+      tft.fillScreen(TFT_GREEN);
+      tft.setTextColor(TFT_BLACK);
+      tft.setTextSize(3);
+      tft.setCursor(100,100);
+      tft.println("SET-POINT");
+      tft.setCursor(130,100);
+      tft.println(setPoint);
+      delay(1000);
+      while(keypad.getKey() == 'n'){}
+      Serial.println(keyS);
+      if(keyS != 'n' && keyS != 'E' && keyS != 'M'){
+        if((int)keyS > '0' && (int)keyS < '10'){
+          keyS = 'n';
+          teclaS = (int)keyS;
+          Serial.print("Tecla: ");
+          Serial.println(teclaS);
+          Serial.print("Key: ");
+          Serial.println((int)keypad.getKey());
+          setPointS += teclaS*auxTecla;
+          auxTecla *= 10;  
+        }else if(keyS == '0'){
+          setPointS *= 10;
+        }
+      }
+      if(keyS == 'E'){
+        return setPoint;
+      }
+      keyS = keypad.getKey();
+      
+    }
+  
+  }
 void keypadEvent(KeypadEvent key){ 
     switch (keypad.getState()){        
     case PRESSED:
           Serial.println("Pressed");
+          tecla=key;
         break;
     case RELEASED:
             Serial.println("Realeased");
@@ -575,8 +626,8 @@ void handle_setup_page(){
   EEPROM.commit();
   EEPROM.end();
   Serial.println("REDEEEEE");
-  Serial.println(ssid_AP);
-  Serial.println(pwdConfig);
+  //Serial.println(ssid_AP);
+  //Serial.println(pwdConfig);
   configuration = false;
   WiFi.disconnect();
 }
