@@ -22,8 +22,8 @@
 #define bomba D1
 #define valvula D2
 #define vazao A0
-#define buttonConf D3
-#define resetParametros D4
+#define buttonConf D7
+#define resetParametros D5
 //Wifi Acess Point/Roteador da rede wifi
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
@@ -33,6 +33,7 @@ String brokerPort  = "1883";                 //Porta do Broker MQTT
 String brokerID    = "BOMBA";
 String brokerUser  =  "";                 //Usuário Broker MQTT
 String brokerPWD   = "";                  //Senha Broker MQTT
+String topicSubscrive = "BOMBA/#";
 String topicPubControleSensorVazao = "CONTROLE/SENSOR_VAZAO";     //Topico de pubscrive do sensor Vazao
 String topicSubBomba = "BOMBA/BOMBA";                  //Topico de subscrive da Bomba
 String topicSubValvula = "BOMBA/VALVULA";              //Topico de subscrive Valvula
@@ -45,13 +46,7 @@ String password_config = "espadmin";             //senha REDE WIFI para configur
 WiFiClient espClient;
 PubSubClient MQTTServer(espClient);
 ESP8266WebServer server(80);
-void loop_config();
-void handle_configuration_save();
-void handle_setup_page();
-void handle_login();
-bool is_authentified();
-void Wi_Fi();
-void MQTT();
+
 
 bool configuration = false;
 bool varBomba = false;               //Preset False para Bomba
@@ -81,7 +76,7 @@ void setup(){
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
-      EEPROM.put(200, pwd_config);
+      EEPROM.put(240, pwd_config);
       EEPROM.commit();
       EEPROM.end();
     }else{
@@ -96,7 +91,7 @@ void setup(){
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
-      EEPROM.put(200, pwd_config);
+      EEPROM.put(240, pwd_config);
       EEPROM.end();
       }
 }
@@ -112,7 +107,16 @@ void loop(){
       MQTT();
       MQTTServer.loop();           
     }
-    
+    if(varBomba){
+      digitalWrite(bomba,HIGH);
+      digitalWrite(valvula,HIGH);
+      varVazao = 12;     
+    }else{
+      varVazao = 0;
+      digitalWrite(bomba,LOW);
+      digitalWrite(valvula,LOW);
+    }
+    //delay(100);
     
 }
 ////*****************ITERRUPÇÂO PARA vazao*********************************
@@ -128,17 +132,12 @@ void confInterrupt(){
 //**************FUNÇÃO QUE VERIFICA AUTENTIFICAÇÃO DE LOGIN******************************
 //retorna true e false conforme o cookie estiver com o ID correto
 bool is_authentified() {
-  Serial.println("Enter is_authentified");
   if (server.hasHeader("Cookie")) {
-    Serial.print("Found cookie: ");
     String cookie = server.header("Cookie");
-    Serial.println(cookie);
-    if (cookie.indexOf("ESPSESSIONID=1") != -1) {           
-      Serial.println("Authentification Successful");
+    if (cookie.indexOf("ESPSESSIONID=1") != -1) {  
       return true;
     }
   }
-  Serial.println("Authentification Failed");
   return false;
 }
 ////*****************escrever*********************************
@@ -186,7 +185,7 @@ void handle_setup_page(){
   EEPROM.get(180, user_config);
   EEPROM.get(200, pwd_config);
   EEPROM.get(220, ssid_config);
-  EEPROM.get(200, pwd_config);
+  EEPROM.get(240, pwd_config);
   EEPROM.end();
   if (!is_authentified()) {
     server.sendHeader("Location", "/login");
@@ -308,10 +307,9 @@ void handle_setup_page(){
   EEPROM.put(180, user_config);
   EEPROM.put(200, pwd_config);
   EEPROM.put(220, ssid_config);
-  EEPROM.put(200, pwd_config);
+  EEPROM.put(240, pwd_config);
   EEPROM.commit();
   EEPROM.end();
-  Serial.println(ssid_AP);
   configuration = false;
   WiFi.disconnect();
 }
@@ -340,8 +338,8 @@ void handle_setup_page(){
 //******************FUNÇÃO QUE CONECTA AO BROKER MQTT*********************************** 
 void MQTT(){
   if(MQTTServer.connected() == 1 ){                                       //CONECTADO
-    Serial.println("MQTT Conectado!");    
-    Serial.print("Status: ");                                 //STATUS NAO OK
+   // Serial.println("MQTT Conectado!");    
+   // Serial.print("Status: ");                                 //STATUS NAO OK
     switch (MQTTServer.state()) {
       case -4:
         Serial.println("MQTT_CONNECTION_TIMEOUT");
@@ -356,7 +354,7 @@ void MQTT(){
         Serial.println("MQTT_DISCONNECTED");
       break;
       case 0:
-        Serial.println("MQTT_CONNECTED");
+        //Serial.println("MQTT_CONNECTED");
         return;
       break;
       case 1:
@@ -383,7 +381,6 @@ void MQTT(){
   }else if(MQTTServer.connected() == 0 ){                                 //DESCONECTADO
     InitMQTT:
     Serial.println("MQTT Desconectado!... Configuracao MQTT");
-    //Serial.println(brokerUrl);
     MQTTServer.setServer(brokerUrl.c_str(), atoi(brokerPort.c_str()));
     MQTTServer.setCallback(subscrive);
     long timerMQTT = millis();
@@ -395,6 +392,11 @@ void MQTT(){
         return;
       }                        
     }
+    if(MQTTServer.subscribe(topicSubscrive.c_str(),0)){
+      Serial.println("SUBSCRIVE ok!!");
+    }else{
+      Serial.println("ERRO SUBSCRIVE");
+    }
   }
 }
 //*****************************RECONECTA WI.FI*****************************************************
@@ -404,11 +406,8 @@ void Wi_Fi(){
     if (WiFi.status() == WL_CONNECTED){
       return;
     }
-    delay(10);
-    
-    Serial.print("Configurando WiFi!: ");
-    
-    //Serial.println(ssid_AP);    
+    delay(10);    
+    Serial.print("Configurando WiFi!: ");     
     WiFi.begin(ssid_AP.c_str(), password_AP.c_str());                  // Conecta na rede WI-FI    
     long timerWifi = millis();
     while (WiFi.status() != WL_CONNECTED){
@@ -426,21 +425,35 @@ void Wi_Fi(){
 }
 void subscrive(char* topic, byte* payload, unsigned int length){
   char resposta[length];
-  Serial.println("Resceiver msg!!");
+  //Serial.println("");
   String topico;
   String msg;
   String aux;
   int valor;
 
-  for(int i = 0; i <= length; i++){                  //Transforma o topico String Para manipulação
-     resposta[i] = (char)topic[i];
-     topico += resposta[i];
-     }
-  Serial.println(topico);
+  topico = String(topic);
   for(int i = 0; i <= length; i++){                  //Transforma a mensagem recebida em String Para manipulação
      resposta[i] = (char)payload[i];
      msg += resposta[i];
      }
-   
+  if(topico.equals(topicSubBomba)){                     //Mensagem do Modulo de Controle
+      if(msg[0]=='0'){
+        varBomba = false;
+      }else{
+        varBomba = true;
+      }
+      Serial.print("varBomba: ");
+      Serial.println(varBomba);
+  }
+  if(topico.equals(topicSubValvula)){                     //Mensagem do Modulo de Controle
+      if(msg[0]=='0'){
+        varValvula = false;
+      }else{
+        varValvula = true;
+      }
+      Serial.print("varVAlvula: ");
+      Serial.println(varValvula);
+  }
+  MQTTServer.publish(topicPubControleSensorVazao.c_str(), String(varVazao).c_str() ); 
 }
 

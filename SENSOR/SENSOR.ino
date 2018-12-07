@@ -19,11 +19,12 @@
 #include <WiFiClient.h>
 #include <PubSubClient.h>
 #include <EEPROM.h>
+#include <Ticker.h>
 #define sensorHigh D1
 #define sensorLow D2
 #define nivelTanque A0
-#define buttonConf D3
-#define resetParametros D4
+#define buttonConf D7
+#define resetParametros D5
 //Wifi Acess Point/Roteador da rede wifi
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
@@ -31,11 +32,12 @@ String password_AP = "99434266";
 String brokerUrl   = "192.168.0.190";                                 //URL do broker MQTT 
 String brokerPort  = "1883";                                          //Porta do Broker MQTT
 String brokerID    = "SENSOR";
-String brokerUser  =  "";                                          //Usuário Broker MQTT
-String brokerPWD   = "";                                           //Senha Broker MQTT                                          //Topico
+String brokerUser  =  "";                                       //Usuário Broker MQTT
+String brokerPWD   = "";                                        //Senha Broker MQTT                                          //Topico
 String topicPubControleSensorHigh = "CONTROLE/SENSOR_HIGH";     //Topico de pubscrive do sensor nivel Alto do Tanque
 String topicPubControleSensorLow = "CONTROLE/SENSOR_LOW";       //Topico de pubscrive do sensor  nivel Baixo do Tanque
 String topicPubControleSensorNivel = "CONTROLE/SENSOR_NIVEL";   //Topico de pubscrive do sensor de nivel do Tanque
+String topicPubControleLitrosTanque = "CONTROLE/LITROS_TANQUE"; //Topico de pubscrive a quantidade de litros no Tanque
 //Acess Point ssid e pwd
 String user_config = "admin";
 String pwd_config  = "admin";
@@ -45,18 +47,14 @@ String password_config = "espadmin";             //senha REDE WIFI para configur
 WiFiClient espClient;
 PubSubClient MQTTServer(espClient);
 ESP8266WebServer server(80);
-void loop_config();
-void handle_configuration_save();
-void handle_setup_page();
-void handle_login();
-bool is_authentified();
-void Wi_Fi();
-void MQTT();
-
+Ticker timerPub;
+//Var de Controle
 bool configuration = false;
 bool varSensorHigh = false;           //Preset false nivelTanque high do tanque
 bool varSensorLow = false;            //Preset False nivelTanque Low do Tanque
-int varNivelTanque = 25;        //Preset de nivel = 0.0
+int varNivelTanque = 25;              //Preset de nivel = 0.0
+int varLitrosTanque = 50;             //Presety de 50 litros  no tanque
+bool pubOk = false;
 String msg;
 void setup(){
     Serial.begin(9600);
@@ -65,6 +63,7 @@ void setup(){
     pinMode(buttonConf,INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(buttonConf),confInterrupt,RISING);
     EEPROM.begin(512);
+    //timerPub.attach(1,Pub);
     if(digitalRead(resetParametros) == true){      ///esquema pois tive q resetar modulo para conectar ao broker depois de confgurado
       EEPROM.put(0, ssid_AP);       //se ageitar config exluir este botao e esta logica
       EEPROM.put(20, password_AP);
@@ -77,7 +76,8 @@ void setup(){
       EEPROM.put(180, user_config);
       EEPROM.put(200, pwd_config);
       EEPROM.put(220, ssid_config);
-      EEPROM.put(200, pwd_config);
+      EEPROM.put(240, pwd_config);
+      EEPROM.put(260, varLitrosTanque);
       EEPROM.commit();
       EEPROM.end();
     }else{
@@ -89,10 +89,11 @@ void setup(){
       EEPROM.get(100, brokerID);
       EEPROM.get(120, brokerUser);
       EEPROM.get(140, brokerPWD);
-      EEPROM.put(180, user_config);
-      EEPROM.put(200, pwd_config);
-      EEPROM.put(220, ssid_config);
-      EEPROM.put(200, pwd_config);
+      EEPROM.get(180, user_config);
+      EEPROM.get(200, pwd_config);
+      EEPROM.get(220, ssid_config);
+      EEPROM.get(240, pwd_config);
+      EEPROM.get(260, varLitrosTanque);
       EEPROM.end();
       }
 }
@@ -110,22 +111,20 @@ void loop(){
       varSensorLow = !digitalRead(sensorHigh);
       varSensorHigh = !digitalRead(sensorLow);
       varNivelTanque = map(analogRead(nivelTanque),0,1024,0,100);
-      Serial.print("Sensor High: ");
-      Serial.println(varSensorHigh);                     //Mensagem do Modulo de Controle
-      Serial.print("SensorLow: ");
-      Serial.println(varSensorLow);
+
+      MQTTServer.publish(topicPubControleSensorHigh.c_str(), String(varSensorHigh).c_str(),false );
+      MQTTServer.publish(topicPubControleSensorLow.c_str(), String(varSensorLow).c_str() ,false);
+      MQTTServer.publish(topicPubControleSensorNivel.c_str(), String(varNivelTanque).c_str() ,0);
+      MQTTServer.publish(topicPubControleLitrosTanque.c_str(), String(varLitrosTanque).c_str(),false );
       Serial.print("Nivel: ");
       Serial.println(varNivelTanque);
-  
-      MQTTServer.publish(topicPubControleSensorHigh.c_str(), String(varSensorHigh).c_str() );
-      MQTTServer.publish(topicPubControleSensorLow.c_str(), String(varSensorLow).c_str() );
-      MQTTServer.publish(topicPubControleSensorNivel.c_str(), String(varNivelTanque).c_str() );
       delay(1000);
     }
     
     
 }
-////*****************ITERRUPÇÂO PARA CONFIGUTAÇÂO*********************************
+
+////*****************ITERRUPÇÂO PARA CONFIGUTAÇÂO****************************************
 void confInterrupt(){
   configuration = true; 
   }
@@ -143,7 +142,7 @@ bool is_authentified() {
   Serial.println("Authentification Failed");
   return false;
 }
-////*****************escrever*********************************
+////*****************PAGINA HTML PARA LOGIN***********************************************
 void handle_login() {
   String msg;
   if (server.hasHeader("Cookie")) {
@@ -202,6 +201,10 @@ void handle_setup_page(){
   html += "Color: #000088; }</style>";  
   html += "</head><body>";
   html += "<h1><center>Configuracao Broker and Acess Parametros</h1>";                     //1 center foi suficiennte
+
+  html += "<p><center>Total de Litros Tanque</p>";                                                      //campo para obter ssid da rede wifi com acesso a internet
+  html += "<center><form method='POST' action='/config_save'>";                       //config_salve
+  html += "<input type=text name=varLitrosTanque placeholder='" + String(varLitrosTanque) + "'/> ";
  
   html += "<p><center>SSID so AP</p>";                                                      //campo para obter ssid da rede wifi com acesso a internet
   html += "<center><form method='POST' action='/config_save'>";                       //config_salve
@@ -266,6 +269,9 @@ void handle_setup_page(){
   html += "<h3>...Reset Modulo</h3>";
   html += "</body></html>";
   server.send(200, "text/html", html);
+  if(server.arg("varLitrosTanque") != ""){
+     varLitrosTanque  = atoi(server.arg("ssid_AP").c_str());
+  }  
   if(server.arg("ssid_AP") != ""){
      ssid_AP     = server.arg("ssid_AP");
   }                                                    //pega valor do html da input com nome = ssid_AP
@@ -310,15 +316,15 @@ void handle_setup_page(){
   EEPROM.put(180, user_config);
   EEPROM.put(200, pwd_config);
   EEPROM.put(220, ssid_config);
-  EEPROM.put(200, pwd_config);
+  EEPROM.put(240, pwd_config);  
+  EEPROM.put(260, varLitrosTanque);
   EEPROM.commit();
   EEPROM.end();
-  //Serial.println(ssid_AP);
   configuration = false;
   WiFi.disconnect();
 }
 
-//********************FUNÇÃO QUE EXECUTA A PARTE DE CONFIGURAÇÃO***********************
+//********************FUNÇÃO QUE EXECUTA A PARTE DE CONFIGURAÇÃO*************************
 void loop_config(){
    Serial.println("Configuration is Started!!!");
         delay(2000);                                                        //2 segundos para filtrar ruido do botao
@@ -339,7 +345,7 @@ void loop_config(){
         }
          WiFi.disconnect();
   }
-//******************FUNÇÃO QUE CONECTA AO BROKER MQTT*********************************** 
+//******************FUNÇÃO QUE CONECTA AO BROKER MQTT************************************* 
 void MQTT(){
   if(MQTTServer.connected() == 1 ){                                       //CONECTADO
     //Serial.println("MQTT Conectado!");    
@@ -407,9 +413,7 @@ void Wi_Fi(){
       return;
     }
     delay(10);
-    Serial.println("Configurando WiFi!"); 
-    //Serial.print(ssid_AP);
-    //Serial.println(password_AP);   
+    Serial.println("Configurando WiFi!");    
     WiFi.begin(ssid_AP.c_str(), password_AP.c_str());                  // Conecta na rede WI-FI    
     long timerWifi = millis();
     while (WiFi.status() != WL_CONNECTED){
@@ -419,8 +423,7 @@ void Wi_Fi(){
         return;
       }
     }  
-    Serial.print("Conectado com sucesso na rede: ");
-    //Serial.println(ssid_AP);
+    Serial.print("Conectado com sucesso na rede ");
     Serial.print(" IP obtido: ");
     Serial.println(WiFi.localIP());
     return;

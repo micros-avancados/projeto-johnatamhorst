@@ -28,18 +28,20 @@ String brokerPWD   = "";                                    //Senha Broker MQTT
 String topicSubscrive = "CONTROLE/#";                            //Topico de cubscrive do generico
 //IHM OUVE
 String topicSubSetpoint = "CONTROLE/SETPOINT";      //lembra se for no nodeMCU colocar p $ no final      
-String topicSubvarStart = "CONTROLE/varStart"; 
+String topicSubvarStart = "CONTROLE/START"; 
 //BOMBA OUVE
 String topicSubSensorVazao = "CONTROLE/SENSOR_VAZAO";
 //SENSOR OUVE
 String topicSubSensorHigh = "CONTROLE/SENSOR_HIGH"; 
 String topicSubSensorLow = "CONTROLE/SENSOR_LOW";
 String topicSubSensorNivel = "CONTROLE/SENSOR_NIVEL";
+String topicSubLitrosTanque = "CONTROLE/LITROS_TANQUE";
 
 //BOMBA FALA
 String topicPubBombaBomba = "BOMBA/BOMBA";
 String topicPubBombaValvula = "BOMBA/VALVULA";
 //IHM FALA
+String topicPubIHMLitrosTanque = "IHM/LITROS_TANQUE";
 String topicPubIHMTempoTotal = "IHM/TEMPO_TOTAL";                  
 String topicPubIHMTempoRestante = "IHM/TEMPO_RESTANTE";
 String topicPubIHMStatus = "IHM/STATUS";
@@ -50,31 +52,36 @@ PubSubClient MQTTServer(espClient);
 ESP8266WebServer server(80);
 
 //OUVE
-bool setPoint = false;                       //Preset de SetPoint 
+unsigned int setPoint = 0;                       //Preset de SetPoint 
 bool varStart = false;
 //OUVE DO SENSOR
 bool sensorHigh = false;                //Preset false no sensor de nivel High
 bool sensorLow = false;                 //Preset false no sensor de nivel Low
 unsigned int nivel = 0.0;
+unsigned int litrosTanque = 50;         //Preset de 50 litros capacidade total do tanque
 //OUVE DA BOMBA
 float vazao = 0.0;
 
 //FALA PRA IHM
 String tempoRestante = "00:00:00";      //Preset de 0 tempo;
 String tempoTotal = "00:01:00";         //Preset de tempo total de 1hora
-unsigned int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
-int statusTanque = 50;
+unsigned int nivelTanque = 50;          //Preset de 0% de nivel no tanque
+int statusTanque = 50;                  //Preset Inicial
+//int litrosTanque = 50;                  //Preset de 50 litros total do tanque
 //FALA PRA BOMBA
-//int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
-//int statusTanque = 50;
-
-int litrosTanque = 50;                  //Preset de 50 litros total do tanque
-
-
-//funcao setup
+bool bomba = false;
+bool valvula = false;
+//var controle
+unsigned int nivelControle = 0;
+int timerLoop;
 void setup(){
+      timerLoop = millis();
     Serial.begin(9600);
-    
+//    Wi_Fi();
+//    MQTT();
+//    MQTTServer.publish(topicPubBombaBomba.c_str(), String(0).c_str() );     // bomba desligada
+//    MQTTServer.publish(topicPubBombaValvula.c_str(), String(0).c_str() );   // valvula fechada
+//      
 }
 
 void loop(){
@@ -82,23 +89,70 @@ void loop(){
       Wi_Fi();
       MQTT();
       MQTTServer.loop(); 
-      //MQTTServer.publish(topicSubscriveSensor.c_str(), String(key).c_str() );    
+      //nivelControle = map(nivel,0,100,0,litrosTanque);
+      nivelControle = (litrosTanque*nivel)/100;
+      if(varStart && nivelControle >= setPoint && sensorLow && setPoint != 0){
+        bomba = true;
+        valvula = true;
+      }else{
+        bomba = false;
+        valvula = false;
+      }
     
 }                                           
 //*******************FUNÇÃO Q RECONECTA AO BROKER ***************************************
 //reconecta-se ao broker MQTT (caso ainda não esteja conectado ou em caso de a conexão cair)
 // em caso de sucesso na conexão ou reconexão, o subscribe dos tópicos é refeito.
 void MQTT(){
-  if(MQTTServer.connected() == 1 ){                                       //CONECTADO                             //STATUS NAO OK
-    if(MQTTServer.state()==0){
-    //Serial.println("!");
-    }else{
+  if(MQTTServer.connected() == 1 ){                                       //CONECTADO
+//    if(MQTTServer.subscribe(topicSubscrive.c_str(),0)){
+//      Serial.println("SUBSCRIVE ok!!");
+//    }else{
+//      Serial.println("ERRO SUBSCRIVE");
+//    }                                //STATUS NAO OK
+    switch (MQTTServer.state()) {
+      case -4:
+        Serial.println("MQTT_CONNECTION_TIMEOUT");
+      break;
+      case -3:
+        Serial.println("MQTT_CONNECTION_LOST");
+      break;
+      case -2:
+        Serial.println("MQTT_CONNECT_FAILED");
+      break;
+      case -1:
+        Serial.println("MQTT_DISCONNECTED");
+      break;
+      case 0:
+        //Serial.println("MQTT_CONNECTED");
+        return;
+      break;
+      case 1:
+        Serial.println("MQTT_CONNECT_BAD_PROTOCOL");
+      break;
+      case 2:
+        Serial.println("MQTT_CONNECT_UNAVAILABLE");
+      break;
+      case 3:
+        Serial.println("MQTT_CONNECTION_TIMEOUT");
+      break;
+      case 4:
+        Serial.println("MQTT_CONNECT_BAD_CREDENTIALS");
+      break;
+      case 5:
+        Serial.println("MQTT_CONNECT_UNAUTHORIZED");
+      break;
+      default:
+        Serial.println("Erro Desconhecido!!");
+      break;
       MQTTServer.disconnect();
       goto InitMQTT;
     }    
   }else if(MQTTServer.connected() == 0 ){                                 //DESCONECTADO
     InitMQTT:
     Serial.println("MQTT Desconectado!... Configuracao MQTT");
+    //Serial.println(brokerUrl);
+    //Serial.println(topicoSubscrive);
     MQTTServer.setServer(brokerUrl.c_str(), atoi(brokerPort.c_str()));
     MQTTServer.setCallback(subscrive);
     long timerMQTT = millis();
@@ -110,7 +164,6 @@ void MQTT(){
         return;
       }                        
     }
-    //MQTTServer.subscribe(topicSubscriveControle.c_str(),0);
     if(MQTTServer.subscribe(topicSubscrive.c_str(),0)){
       Serial.println("SUBSCRIVE ok!!");
     }else{
@@ -146,7 +199,7 @@ void Wi_Fi(){
 //*********************SUBCRIVER MODE***********************
 void subscrive(char* topic, byte* payload, unsigned int length){
   char resposta[length];
-  Serial.println("Resceiver msg!!");
+  //Serial.println(" ");
   String topico;
   String msg;
   String aux;
@@ -157,25 +210,25 @@ void subscrive(char* topic, byte* payload, unsigned int length){
   for(int i = 0; i < length; i++){                  //Transforma a mensagem recebida em String Para manipulação
      resposta[i] = (char)payload[i];
      msg += resposta[i];
-     }
-  if(topico == topicSubSetpoint){                     //Mensagem do Modulo de Controle
+     } 
+  if(topico.equals(topicSubSetpoint)){                     //Mensagem do Modulo de Controle
       setPoint = atoi(msg.c_str());
-      Serial.print("Setpoint: ");
-      Serial.println(setPoint);
+      //Serial.print("Setpoint: ");
+      //Serial.println(setPoint);
   }
-   if(topico == topicSubvarStart){                     //Mensagem do Modulo de Controle
+   if(topico.equals(topicSubvarStart)){                     //Mensagem do Modulo de Controle
       if(msg[0]=='0'){
         varStart = false;
       }else{
-       // varStart = true;
+        varStart = true;
       }
-      Serial.print("varStart: ");
-      Serial.println(varStart);
+     // Serial.print("varStart: ");
+      //Serial.println(varStart);
   }
-   if(topico == topicSubSensorVazao){                     //Mensagem do Modulo de Controle
+   if(topico.equals(topicSubSensorVazao)){                     //Mensagem do Modulo de Controle
       vazao = atoi(msg.c_str());
-      Serial.print("Vazao: ");
-      Serial.println(vazao);
+      //Serial.print("Vazao: ");
+      //Serial.println(vazao);
   }
    if(topico.equals(topicSubSensorHigh)){                     //Mensagem do Modulo de Controle
       if(msg[0]=='0'){
@@ -183,23 +236,34 @@ void subscrive(char* topic, byte* payload, unsigned int length){
       }else{
         sensorHigh = true;
       }
-      Serial.print("Sensor High: ");
-      Serial.println(sensorHigh);
+     // Serial.print("Sensor High: ");
+      //Serial.println(sensorHigh);
   }
-   if(topico == topicSubSensorLow){                     //Mensagem do Modulo de Controle
+   if(topico.equals(topicSubSensorLow)){                     //Mensagem do Modulo de Controle
       if(msg[0]=='0'){
         sensorLow = false;
       }else{
         sensorLow = true;
       }
-      Serial.print("SensorLow: ");
-      Serial.println(sensorLow);
+     //Serial.print("SensorLow: ");
+     //Serial.println(sensorLow);
   }
-  if(topico == topicSubSensorNivel){                     //Mensagem do Modulo de Controle
+
+  if(topico.equals(topicSubSensorNivel)){                     //Mensagem do Modulo de Controle
       nivel = atoi(msg.c_str());
-      Serial.print("Nivel: ");
+      Serial.print("Nivel subs: ");
       Serial.println(nivel);      
   }
+  if(topico.equals(topicSubLitrosTanque)){                     //Mensagem do Modulo de Controle
+      litrosTanque = atoi(msg.c_str());
+     // Serial.print("Litros Tanque: ");
+     /// Serial.println(litrosTanque);      
+  }
+  MQTTServer.publish(topicPubBombaBomba.c_str(), String(bomba).c_str() );     // bomba desligada
+  MQTTServer.publish(topicPubBombaValvula.c_str(), String(valvula).c_str() );   // valvula fechada
+  MQTTServer.publish(topicPubIHMNivel.c_str(), String(nivel).c_str() ); 
+  MQTTServer.publish(topicPubIHMLitrosTanque.c_str(), String(litrosTanque).c_str() );
+  
 }
 
 

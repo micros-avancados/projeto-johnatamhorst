@@ -20,6 +20,7 @@
 #include <PubSubClient.h>
 #include <EEPROM.h>
 #include <Ticker.h>
+#include <Arduino.h>
 //Wifi Acess Point/Roteador da rede wifi
 String ssid_AP     = "wifi_Johnatan";
 String password_AP = "99434266";
@@ -36,6 +37,7 @@ String topicSubTempoTotal = "IHM/TEMPO_TOTAL";
 String topicSubTempoRestante = "IHM/TEMPO_RESTANTE";
 String topicSubStatus = "IHM/STATUS";
 String topicSubNivel = "IHM/NIVEL"; 
+String topicSubLitrosTanque = "IHM/LITROS_TANQUE";
 //Acess Point ssid e pwd
 const char* ssid_config = "Configuration Module";     //ssid REDE WIFI para configuração
 const char* password_config = "espadmin";             //senha REDE WIFI para configuração
@@ -54,22 +56,12 @@ char keys[ROWS][COLS] = {
   {'1','2','3'},
   {'4','5','6'},
   {'7','8','9'},
-  {'E','0','M',}
+  {'P','0','M',}
 };
-byte rowPins[ROWS] = {D0,D1,D2,D3}; 
-byte colPins[COLS] = {10,D6,D4}; 
+byte rowPins[ROWS] = {D6,10,D4,D3}; 
+byte colPins[COLS] = {D0,D1,D2}; 
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
-//Prototipo das funções utilizadas
-void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String tempoTotal ,int litrosTanque );
-void loop_config();
-void subscrive(char* topic, byte* payload, unsigned int length);
-void handle_configuration_save();
-void handle_setup_page();
-void handle_login();
-bool is_authentified();
-void configuration_ISR();
-void Wi_Fi();
-void initMQTT();
+
 //descomentar depois void answerBroker(char* topic, byte* payload, unsigned int length);
 void VerificaConexoesWiFIEMQTT(void);
 char tecla;
@@ -83,7 +75,8 @@ bool sensorLow = false;                 //Preset false no sensor de nivel Low
 int litrosTanque = 50;                  //Preset de 50 litros total do tanque
 int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
 int statusTanque = 50;
-bool start = false;
+bool varStart = false;
+int nivelControle;
 #define topicoSubscrive "IHM"
 //funcao setup
 void setup(){
@@ -128,28 +121,38 @@ void loop(){
       WiFi.disconnect(true);
       configuration = true;
       loop_config();
-      tecla='0';         
-    }if (tecla == 'E'){
-      setPoint = telaSetPoint();
-      Serial.println(setPoint);
+      tecla='n';         
+    }if (tecla == 'P'){
+      timeTela.detach();
+      setPoint = telaSetPoint();      
+      if(setPoint >= nivelControle){
+        setPoint = nivelControle;
+      }
+      Serial.print("NivelControle: ");
+      Serial.println(nivelControle);
       //fazer teste de maximo limite do tanque aki 
-      
+      timeTela.attach(2,interruptTela);
+      atualizaTela( setPoint, nivelTanque, tempoRestante, tempoTotal ,litrosTanque );
+      tecla='n';
+    }if (tecla == '1'){
+      varStart = true;
+      tecla='n';
+    }if (tecla == '0'){
+      varStart = false;
+      tecla='n';
     }else{
       Wi_Fi();
       MQTT();
       MQTTServer.loop();           
     }
-    
-    //nivelTela(nivelTanque);
-    //statusTela(statusTanque,true);
+     nivelControle = (litrosTanque*nivelTanque)/100;
+    //delay(1000);
     char key = keypad.getKey();
     tecla=key;
-    Serial.print("Tecla: ");
-    Serial.println(tecla);
-    //if (key) {
-       // Serial.print(key);
-        //MQTTServer.publish(topicSubscriveSensor.c_str(), String(key).c_str() );    
-    //}
+    if (key) {
+        Serial.println(key);  
+        Serial.println(varStart); 
+    }
 }
 void interruptTela(){
   atualizaTela( setPoint, nivelTanque, tempoRestante, tempoTotal ,litrosTanque );
@@ -182,8 +185,8 @@ void loop_config(){
 // em caso de sucesso na conexão ou reconexão, o subscribe dos tópicos é refeito.
 void MQTT(){
   if(MQTTServer.connected() == 1 ){                                       //CONECTADO
-    Serial.println("MQTT Conectado!");    
-    Serial.print("Status: ");                                 //STATUS NAO OK
+    //Serial.println("MQTT Conectado!");    
+    //Serial.print("Status: ");                                 //STATUS NAO OK
     switch (MQTTServer.state()) {
       case -4:
         Serial.println("MQTT_CONNECTION_TIMEOUT");
@@ -198,7 +201,7 @@ void MQTT(){
         Serial.println("MQTT_DISCONNECTED");
       break;
       case 0:
-        Serial.println("MQTT_CONNECTED");
+        //Serial.println("MQTT_CONNECTED");
         return;
       break;
       case 1:
@@ -225,8 +228,6 @@ void MQTT(){
   }else if(MQTTServer.connected() == 0 ){                                 //DESCONECTADO
     InitMQTT:
     Serial.println("MQTT Desconectado!... Configuracao MQTT");
-    //Serial.println(brokerUrl);
-    //Serial.println(topicoSubscrive);
     MQTTServer.setServer(brokerUrl.c_str(), atoi(brokerPort.c_str()));
     MQTTServer.setCallback(subscrive);
     long timerMQTT = millis();
@@ -277,49 +278,45 @@ void Wi_Fi(){
 //*********************SUBCRIVER MODE***********************
 void subscrive(char* topic, byte* payload, unsigned int length){
   char resposta[length];
-  Serial.println("Resceiver msg!!");
+  //Serial.println("");
   String topico;
   String msg;
   String aux;
   int valor;
   int i=0;
-  while((char(topic[i])) != '$'){
-    topico += (char)topic[i];
-    i++;
-  }
-
+ topico = String(topic);
   for(int i = 0; i <= length; i++){                  //Transforma a mensagem recebida em String Para manipulação
      resposta[i] = (char)payload[i];
      msg += resposta[i];
      }
-//int setPoint = 0;                       //Preset de SetPoint 
-//String tempoRestante = "00:00:00";      //Preset de 0 tempo;
-//String tempoTotal = "00:01:00";         //Preset de tempo total de 1hora
-//bool sensorHigh = false;                //Preset false no sensor de nivel High
-//bool sensorLow = false;                 //Preset false no sensor de nivel Low
-//int litrosTanque = 50;                  //Preset de 50 litros total do tanque
-//int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
-//int statusTanque = 50;
-//String topicSubTempoTotal = "IHM/TEMPO_TOTAL";                  
-//String topicSubTempoRestante = "IHM/TEMPO_RESTANTE";
-//String topicSubStatus = "IHM/STATUS";
-//String topicSubNivel = "IHM/NIVEL";    
-  if(topico == topicSubNivel){                     //Mensagem do Modulo de Controle
+    
+  if(topico.equals(topicSubNivel)){                     //Mensagem do Modulo de Controle
       nivelTanque = atoi(msg.c_str());
+      Serial.print("Nivel Tanque: ");
+      Serial.println(nivelTanque);
   }
-   if(topico == topicSubStatus){                     //Mensagem do Modulo de Controle
+   if(topico.equals(topicSubStatus)){                     //Mensagem do Modulo de Controle
       statusTanque = atoi(msg.c_str());
+      Serial.print("Status Tanque: ");
       Serial.println(statusTanque);
   }
-   if(topico == topicSubTempoTotal){                     //Mensagem do Modulo de Controle
+   if(topico.equals(topicSubTempoTotal)){                     //Mensagem do Modulo de Controle
       tempoTotal = msg;
+      Serial.print("Tempo Total: ");
+      Serial.println(tempoTotal);
   }
-   if(topico == topicSubTempoRestante){                     //Mensagem do Modulo de Controle
+   if(topico.equals(topicSubTempoRestante)){                     //Mensagem do Modulo de Controle
       tempoRestante = msg;
+      Serial.print("Tempo Restante: ");
+      Serial.println(tempoRestante);
   }
-   if(topico == topicSubNivel){                     //Mensagem do Modulo de Controle
-      statusTanque = atoi(msg.c_str());;
+   if(topico.equals(topicSubLitrosTanque)){                     //Mensagem do Modulo de Controle
+      litrosTanque = atoi(msg.c_str());
+      //Serial.print("litros Tanque: ");
+      //Serial.println(litrosTanque);
   }
+  MQTTServer.publish(topicPubControleSetpoint.c_str(), String(setPoint).c_str() ); 
+  MQTTServer.publish(topicPubControleStart.c_str(), String(varStart).c_str() ); 
 }
 ////*****************CONTROLA O NIVEL DA TELA*********************************
 void nivelTela(int nivelTanque){
@@ -332,6 +329,7 @@ void nivelTela(int nivelTanque){
   }
   tft.fillEllipse(170, 180, 30, 10, TFT_BLUE);
   int nivel = map(nivelTanque,0,100,175,30);         //nivel do Tanque vem em Porcentagem  
+    
     for(int i = 175; i > nivel; i--){                  //for para atualizar nivel no tubo                          
       tft.fillEllipse(170, i, 40, 10, TFT_BLUE);
     }
@@ -342,9 +340,7 @@ void nivelTela(int nivelTanque){
     tft.fillEllipse(170, 26, 30, 10, TFT_WHITE);  
 }
 void statusTela(int statusTanque, bool start){
-//    
-//    tft.fillRect(10, 270, 220, 30, TFT_BLACK);                //retangulo de porcentagem
-//    tft.fillRect(12, 272, 216, 26, TFT_WHITE);
+  
   if(statusTanque >= 100){
       statusTanque = 99;
   }else if(statusTanque<0){
@@ -384,7 +380,7 @@ void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String te
     tft.setCursor(10,80);
     tft.println("Litros");
     tft.setCursor(30,100);
-    tft.println((litrosTanque*nivelTanque)/100);            //Litros no Tanque no Painel
+    tft.println(litrosTanque);            //Litros no Tanque no Painel
     
     tft.setCursor(10,150);
     tft.println("Tp Total:");
@@ -404,56 +400,55 @@ void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String te
   }
 ////*****************escrever*********************************
 int telaSetPoint(){
-
     int auxTecla = 1;
     int teclaS;
-    char keyS;
+    char keyS = keypad.getKey();
     int setPointS = 0;
-    while(tecla != 'E'){
+    tecla = 'n';
+    while(true){
       tft.fillScreen(TFT_GREEN);
       tft.setTextColor(TFT_BLACK);
-      tft.setTextSize(3);
-      tft.setCursor(100,100);
+      tft.setTextSize(2);
+      tft.setCursor(50,100);
       tft.println("SET-POINT");
-      tft.setCursor(130,100);
-      tft.println(setPoint);
-      delay(1000);
-      while(keypad.getKey() == 'n'){}
-      Serial.println(keyS);
-      if(keyS != 'n' && keyS != 'E' && keyS != 'M'){
-        if((int)keyS > '0' && (int)keyS < '10'){
-          keyS = 'n';
-          teclaS = (int)keyS;
-          Serial.print("Tecla: ");
-          Serial.println(teclaS);
-          Serial.print("Key: ");
-          Serial.println((int)keypad.getKey());
-          setPointS += teclaS*auxTecla;
-          auxTecla *= 10;  
+      tft.setCursor(50,150);
+      tft.println(setPointS);
+      //delay(1000);
+      //Serial.println(keypad.getKeys());
+      while(!keypad.getKeys()){
+        Serial.println(".");
+        delay(200);
+        }
+      keyS = tecla;
+      if( keyS != 'P' && keyS != 'M'){
+        if(((int)keyS-48) > 0 && ((int)keyS-48) < 10 ){
+          teclaS = ((int)keyS - 48);
+          setPointS *= auxTecla;
+          setPointS += teclaS;
+          auxTecla *= 10; 
         }else if(keyS == '0'){
           setPointS *= 10;
-        }
+          }
+      }else if(keyS = 'P'){
+        return setPointS;
       }
-      if(keyS == 'E'){
-        return setPoint;
-      }
-      keyS = keypad.getKey();
-      
+      tecla = 'n';     
     }
-  
   }
 void keypadEvent(KeypadEvent key){ 
     switch (keypad.getState()){        
     case PRESSED:
-          Serial.println("Pressed");
+          //Serial.println("Pressed");
           tecla=key;
         break;
     case RELEASED:
-            Serial.println("Realeased");
+            //Serial.println("Realeased");
         break;
     case HOLD:
-            Serial.println("Hold");
+            //Serial.println("Hold");
+            if(key == 'M'){
             tecla=key;
+            }
             //configuration = true;
         break;
     }
@@ -625,9 +620,6 @@ void handle_setup_page(){
   EEPROM.put(200, pwdConfig);
   EEPROM.commit();
   EEPROM.end();
-  Serial.println("REDEEEEE");
-  //Serial.println(ssid_AP);
-  //Serial.println(pwdConfig);
   configuration = false;
   WiFi.disconnect();
 }
