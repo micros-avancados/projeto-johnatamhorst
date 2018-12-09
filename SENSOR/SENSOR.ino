@@ -53,8 +53,10 @@ bool configuration = false;
 bool varSensorHigh = false;           //Preset false nivelTanque high do tanque
 bool varSensorLow = false;            //Preset False nivelTanque Low do Tanque
 int varNivelTanque = 25;              //Preset de nivel = 0.0
-int varLitrosTanque = 50;             //Presety de 50 litros  no tanque
+int varLitrosTanque = 70;             //Presety de 50 litros  no tanque
 bool pubOk = false;
+int aux = 0;
+int aux2 = 0;
 String msg;
 void setup(){
     Serial.begin(9600);
@@ -96,6 +98,10 @@ void setup(){
       EEPROM.get(260, varLitrosTanque);
       EEPROM.end();
       }
+      Wi_Fi();
+      MQTT();
+      MQTTServer.publish(topicPubControleLitrosTanque.c_str(), String(varLitrosTanque).c_str(),false );
+      //delay(500);
 }
 
 void loop(){
@@ -112,15 +118,24 @@ void loop(){
       varSensorHigh = !digitalRead(sensorLow);
       varNivelTanque = map(analogRead(nivelTanque),0,1024,0,100);
 
+      aux++;
+      if(aux == 10){ //publicar somente a cada 10´s
       MQTTServer.publish(topicPubControleSensorHigh.c_str(), String(varSensorHigh).c_str(),false );
+      //delay(500);
       MQTTServer.publish(topicPubControleSensorLow.c_str(), String(varSensorLow).c_str() ,false);
+      //delay(500);
+      aux = 0;
+      }  
+          
       MQTTServer.publish(topicPubControleSensorNivel.c_str(), String(varNivelTanque).c_str() ,0);
-      MQTTServer.publish(topicPubControleLitrosTanque.c_str(), String(varLitrosTanque).c_str(),false );
-      Serial.print("Nivel: ");
-      Serial.println(varNivelTanque);
       delay(1000);
-    }
-    
+//      MQTTServer.publish(topicPubControleLitrosTanque.c_str(), String(varLitrosTanque).c_str(),false );
+//      delay(500);
+//      Serial.print("Nivel: ");
+//      Serial.println(varNivelTanque);
+     
+      
+    } 
     
 }
 

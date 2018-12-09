@@ -52,8 +52,8 @@ bool configuration = false;
 bool varBomba = false;               //Preset False para Bomba
 bool varValvula = false;             //Preset False para Valvula
 float varVazao = 0.0;        //Preset de vazao = 0.0
-unsigned int auxVazao = 0;
-unsigned int tempo = 0;
+unsigned int auxPubVazao = 0;
+int auxPub;
 void setup(){
     Serial.begin(9600);
     pinMode(bomba,OUTPUT);
@@ -121,7 +121,7 @@ void loop(){
 }
 ////*****************ITERRUPÇÂO PARA vazao*********************************
 void vazaoInterrupt(){
-  auxVazao++; 
+  auxPubVazao++; 
   }
 
 ////*****************ITERRUPÇÂO PARA CONFIGUTAÇÂO*********************************
@@ -428,8 +428,6 @@ void subscrive(char* topic, byte* payload, unsigned int length){
   //Serial.println("");
   String topico;
   String msg;
-  String aux;
-  int valor;
 
   topico = String(topic);
   for(int i = 0; i <= length; i++){                  //Transforma a mensagem recebida em String Para manipulação
@@ -454,6 +452,11 @@ void subscrive(char* topic, byte* payload, unsigned int length){
       Serial.print("varVAlvula: ");
       Serial.println(varValvula);
   }
+  //auxPub++;
+  //if(varBomba && auxPub >= 10){
   MQTTServer.publish(topicPubControleSensorVazao.c_str(), String(varVazao).c_str() ); 
+  delay(100);
+  //auxPub = 0;
+  //}
 }
 

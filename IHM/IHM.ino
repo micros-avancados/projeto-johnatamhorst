@@ -4,11 +4,7 @@
 //DATA: 06/09/2018
 //PROJETO: 
 //DESCRISAO: Modulo IHM do Projeto
-//
-//
-//
-//
-//
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <Keypad.h>
@@ -33,11 +29,13 @@ String brokerPWD   = "";                                    //Senha Broker MQTT
 String topicSubscrive = "IHM/#";                            //Topico de cubscrive do generico
 String topicPubControleSetpoint = "CONTROLE/SETPOINT";      //lembra se for no nodeMCU colocar p $ no final      
 String topicPubControleStart = "CONTROLE/START"; 
+String topicPubControleRestart = "CONTROLE/RESTART";
 String topicSubTempoTotal = "IHM/TEMPO_TOTAL";                  
 String topicSubTempoRestante = "IHM/TEMPO_RESTANTE";
 String topicSubStatus = "IHM/STATUS";
 String topicSubNivel = "IHM/NIVEL"; 
 String topicSubLitrosTanque = "IHM/LITROS_TANQUE";
+String topicSubRestart = "IHM/RESTART";
 //Acess Point ssid e pwd
 const char* ssid_config = "Configuration Module";     //ssid REDE WIFI para configuração
 const char* password_config = "espadmin";             //senha REDE WIFI para configuração
@@ -69,7 +67,7 @@ bool configuration = false;
 //Variaveis de Controle
 int setPoint = 0;                       //Preset de SetPoint 
 String tempoRestante = "00:00:00";      //Preset de 0 tempo;
-String tempoTotal = "00:01:00";         //Preset de tempo total de 1hora
+String tempoTotal = "00:000:00";         //Preset de tempo total de 1hora
 bool sensorHigh = false;                //Preset false no sensor de nivel High
 bool sensorLow = false;                 //Preset false no sensor de nivel Low
 int litrosTanque = 50;                  //Preset de 50 litros total do tanque
@@ -77,7 +75,8 @@ int nivelTanque = 50;                   //Preset de 0% de nivel no tanque
 int statusTanque = 50;
 bool varStart = false;
 int nivelControle;
-#define topicoSubscrive "IHM"
+int auxPub = 0;
+bool restartProcesso = false;
 //funcao setup
 void setup(){
     Serial.begin(9600);
@@ -117,42 +116,58 @@ void setup(){
 
 void loop(){
     if(tecla=='M'){
+      setPoint = 0;
+      varStart = 0;
+      MQTTServer.publish(topicPubControleSetpoint.c_str(), String(setPoint).c_str() ); 
+      MQTTServer.publish(topicPubControleStart.c_str(), String(setPoint).c_str() ); 
       MQTTServer.disconnect();
       WiFi.disconnect(true);
       configuration = true;
       loop_config();
       tecla='n';         
     }if (tecla == 'P'){
+      setPoint = 0;
+      varStart = 0;
+      MQTTServer.publish(topicPubControleSetpoint.c_str(), String(setPoint).c_str() ); 
+      MQTTServer.publish(topicPubControleStart.c_str(), String(setPoint).c_str() ); 
       timeTela.detach();
       setPoint = telaSetPoint();      
       if(setPoint >= nivelControle){
         setPoint = nivelControle;
       }
-      Serial.print("NivelControle: ");
-      Serial.println(nivelControle);
-      //fazer teste de maximo limite do tanque aki 
+      varStart = true;
+      MQTTServer.publish(topicPubControleStart.c_str(), String(setPoint).c_str() ); 
+      MQTTServer.publish(topicPubControleSetpoint.c_str(), String(setPoint).c_str() ); 
       timeTela.attach(2,interruptTela);
       atualizaTela( setPoint, nivelTanque, tempoRestante, tempoTotal ,litrosTanque );
       tecla='n';
-    }if (tecla == '1'){
-      varStart = true;
-      tecla='n';
+//    }if (tecla == '1'){
+//      varStart = true;
+//      tecla='n';
     }if (tecla == '0'){
       varStart = false;
       tecla='n';
+      tempoTotal = "00:00:00";
+      tempoRestante = "00:00:00";
+      setPoint = 0;
+      MQTTServer.publish(topicPubControleRestart.c_str(), String(true).c_str() );
+      MQTTServer.publish(topicPubControleStart.c_str(), String(setPoint).c_str() ); 
+      MQTTServer.publish(topicPubControleSetpoint.c_str(), String(setPoint).c_str() );
     }else{
       Wi_Fi();
       MQTT();
       MQTTServer.loop();           
-    }
-     nivelControle = (litrosTanque*nivelTanque)/100;
-    //delay(1000);
+    } 
+    if(restartProcesso){
+      setPoint = 0;
+      varStart  = false;
+      restartProcesso = false;
+      tempoTotal = "00:00:00";
+      tempoRestante = "00:00:00";
+    }    
+    nivelControle = (litrosTanque*nivelTanque)/100;    
     char key = keypad.getKey();
-    tecla=key;
-    if (key) {
-        Serial.println(key);  
-        Serial.println(varStart); 
-    }
+
 }
 void interruptTela(){
   atualizaTela( setPoint, nivelTanque, tempoRestante, tempoTotal ,litrosTanque );
@@ -184,9 +199,7 @@ void loop_config(){
 //reconecta-se ao broker MQTT (caso ainda não esteja conectado ou em caso de a conexão cair)
 // em caso de sucesso na conexão ou reconexão, o subscribe dos tópicos é refeito.
 void MQTT(){
-  if(MQTTServer.connected() == 1 ){                                       //CONECTADO
-    //Serial.println("MQTT Conectado!");    
-    //Serial.print("Status: ");                                 //STATUS NAO OK
+  if(MQTTServer.connected() == 1 ){                                 //STATUS NAO OK
     switch (MQTTServer.state()) {
       case -4:
         Serial.println("MQTT_CONNECTION_TIMEOUT");
@@ -239,7 +252,6 @@ void MQTT(){
         return;
       }                        
     }
-    //MQTTServer.subscribe(topicSubscriveControle.c_str(),0);
     if(MQTTServer.subscribe(topicSubscrive.c_str(),0)){
       Serial.println("SUBSCRIVE ok!!");
     }else{
@@ -256,9 +268,7 @@ void Wi_Fi(){
       return;
     }
     delay(10);
-    Serial.println("Configurando WiFi!"); 
-    //Serial.print(ssid_AP);
-    //Serial.println(password_AP);    
+    Serial.println("Configurando WiFi!");     
     WiFi.begin(ssid_AP.c_str(), password_AP.c_str());                  // Conecta na rede WI-FI    
     long timerWifi = millis();
     while (WiFi.status() != WL_CONNECTED){
@@ -278,13 +288,9 @@ void Wi_Fi(){
 //*********************SUBCRIVER MODE***********************
 void subscrive(char* topic, byte* payload, unsigned int length){
   char resposta[length];
-  //Serial.println("");
   String topico;
   String msg;
-  String aux;
-  int valor;
-  int i=0;
- topico = String(topic);
+  topico = String(topic);
   for(int i = 0; i <= length; i++){                  //Transforma a mensagem recebida em String Para manipulação
      resposta[i] = (char)payload[i];
      msg += resposta[i];
@@ -292,36 +298,35 @@ void subscrive(char* topic, byte* payload, unsigned int length){
     
   if(topico.equals(topicSubNivel)){                     //Mensagem do Modulo de Controle
       nivelTanque = atoi(msg.c_str());
-      Serial.print("Nivel Tanque: ");
+      Serial.print("nivel do Tanque: ");
       Serial.println(nivelTanque);
+      Serial.print("litros Tanque: ");
+      Serial.println(litrosTanque);
   }
    if(topico.equals(topicSubStatus)){                     //Mensagem do Modulo de Controle
       statusTanque = atoi(msg.c_str());
-      Serial.print("Status Tanque: ");
-      Serial.println(statusTanque);
   }
    if(topico.equals(topicSubTempoTotal)){                     //Mensagem do Modulo de Controle
       tempoTotal = msg;
-      Serial.print("Tempo Total: ");
-      Serial.println(tempoTotal);
   }
    if(topico.equals(topicSubTempoRestante)){                     //Mensagem do Modulo de Controle
       tempoRestante = msg;
-      Serial.print("Tempo Restante: ");
-      Serial.println(tempoRestante);
   }
-   if(topico.equals(topicSubLitrosTanque)){                     //Mensagem do Modulo de Controle
-      litrosTanque = atoi(msg.c_str());
-      //Serial.print("litros Tanque: ");
-      //Serial.println(litrosTanque);
+   if(topico.equals(topicSubLitrosTanque) && !varStart){                     //Mensagem do Modulo de Controle
+      litrosTanque = (atoi(msg.c_str()));
   }
-  MQTTServer.publish(topicPubControleSetpoint.c_str(), String(setPoint).c_str() ); 
-  MQTTServer.publish(topicPubControleStart.c_str(), String(varStart).c_str() ); 
+  if(topico.equals(topicSubRestart)){                    
+      restartProcesso = bool(msg);
+  }
+  auxPub++;
+  if(auxPub >= 30){
+    MQTTServer.publish(topicPubControleStart.c_str(), String(varStart).c_str() ); 
+    delay(100);
+    auxPub  = 0;
+  }
 }
 ////*****************CONTROLA O NIVEL DA TELA*********************************
 void nivelTela(int nivelTanque){
-
-  //resolver problema com o 100
   if(nivelTanque >= 100){
       nivelTanque = 99;
   }else if(nivelTanque<0){
@@ -339,14 +344,14 @@ void nivelTela(int nivelTanque){
     tft.fillEllipse(170, 26, 50, 20, TFT_BLACK);
     tft.fillEllipse(170, 26, 30, 10, TFT_WHITE);  
 }
-void statusTela(int statusTanque, bool start){
+void statusTela(int statusTanque){
   
   if(statusTanque >= 100){
       statusTanque = 99;
   }else if(statusTanque<0){
       statusTanque=0;
   }
-  if(start){
+  if(statusTanque != 0 && varStart){
     statusTanque = map(statusTanque,0,100,12,216);
     tft.fillRect(12, 272, statusTanque, 26, TFT_BLUE);
     tft.fillRect(12 + statusTanque, 272 , 216 - statusTanque, 26, TFT_WHITE);
@@ -358,7 +363,6 @@ void statusTela(int statusTanque, bool start){
 ////*****************CONTROLA A TELA*********************************
 void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String tempoTotal ,int litrosTanque ){
 
-  //###
     tft.fillScreen(TFT_GREEN);
     tft.setTextColor(TFT_BLACK);
     tft.fillEllipse(170, 26, 50, 20, TFT_BLACK);
@@ -366,37 +370,28 @@ void atualizaTela(int setPoint, int nivelTanque, String tempoRestante, String te
     tft.fillRect(120, 26, 10, 150, TFT_BLACK);
     tft.fillRect(211, 26, 10,150, TFT_BLACK);    
     tft.fillEllipse(170, 180, 50, 20, TFT_BLACK);
-    tft.fillEllipse(170, 180, 30, 10, TFT_WHITE);
-    
-    
+    tft.fillEllipse(170, 180, 30, 10, TFT_WHITE);    
     nivelTela(nivelTanque);
-    statusTela(statusTanque,true);
     tft.setTextSize(2);
     tft.setCursor(10,10);
     tft.println("SET-POINT");
     tft.setCursor(30,30);
     tft.println(setPoint);                                  //Posição do valor de SetPoint
-    
     tft.setCursor(10,80);
     tft.println("Litros");
     tft.setCursor(30,100);
     tft.println(litrosTanque);            //Litros no Tanque no Painel
-    
     tft.setCursor(10,150);
     tft.println("Tp Total:");
     tft.setCursor(10,170);
     tft.println(tempoTotal);
-   
     tft.setCursor(10,220);
     tft.println("Tempo Restante:");
     tft.setCursor(10,240);
     tft.println(tempoRestante);                               //Imprime o Tempo Total para encher
-    
-  //###  
-    
     tft.fillRect(10, 270, 220, 30, TFT_BLACK);                //retangulo de porcentagem
     tft.fillRect(12, 272, 216, 26, TFT_WHITE); 
-  
+    statusTela(statusTanque);
   }
 ////*****************escrever*********************************
 int telaSetPoint(){
@@ -413,8 +408,6 @@ int telaSetPoint(){
       tft.println("SET-POINT");
       tft.setCursor(50,150);
       tft.println(setPointS);
-      //delay(1000);
-      //Serial.println(keypad.getKeys());
       while(!keypad.getKeys()){
         Serial.println(".");
         delay(200);
@@ -438,18 +431,14 @@ int telaSetPoint(){
 void keypadEvent(KeypadEvent key){ 
     switch (keypad.getState()){        
     case PRESSED:
-          //Serial.println("Pressed");
           tecla=key;
         break;
     case RELEASED:
-            //Serial.println("Realeased");
         break;
     case HOLD:
-            //Serial.println("Hold");
             if(key == 'M'){
             tecla=key;
             }
-            //configuration = true;
         break;
     }
 }
@@ -542,8 +531,7 @@ void handle_setup_page(){
   html += "<p>User Broker</p>";                                                          //campo para obter password da rede wifi com acesso a internet
   html += "<form method='POST' action='/'>";
   html += "<input type=text name=brokerID placeholder='" + brokerID + "'/> ";    
-  
-  
+    
   html += "<p>User Broker</p>";                                                          //campo para obter password da rede wifi com acesso a internet
   html += "<form method='POST' action='/'>";
   html += "<input type=text name=brokerUser placeholder='" + brokerUser + "'/> ";    
@@ -551,8 +539,7 @@ void handle_setup_page(){
   html += "<p>Senha Broker</p>";                                                          //campo para obter password da rede wifi com acesso a internet
   html += "<form method='POST' action='/'>";
   html += "<input type=text name=brokerPWD placeholder='" + brokerPWD + "'/> ";    
-  
- 
+   
   html += "<p>Acess User</p>";                                                          //campo para obter password da rede wifi com acesso a internet
   html += "<form method='POST' action='/'>";
   html += "<input type=text name=userConfig placeholder='" + userConfig + "'/> ";    
