@@ -21,7 +21,7 @@
 #include <EEPROM.h>
 #define bomba D1
 #define valvula D2
-#define vazao A0
+#define vazao D8
 #define buttonConf D7
 #define resetParametros D5
 //Wifi Acess Point/Roteador da rede wifi
@@ -47,14 +47,16 @@ WiFiClient espClient;
 PubSubClient MQTTServer(espClient);
 ESP8266WebServer server(80);
 
-
 bool configuration = false;
 bool varBomba = false;               //Preset False para Bomba
 bool varValvula = false;             //Preset False para Valvula
 float varVazao = 0.0;        //Preset de vazao = 0.0
 unsigned int auxPubVazao = 0;
-int auxPub;
+unsigned int tempo = 0;
+int auxPub = 0;
+float freq = 0.0;
 void setup(){
+    tempo = millis();
     Serial.begin(9600);
     pinMode(bomba,OUTPUT);
     pinMode(valvula,OUTPUT);
@@ -110,13 +112,27 @@ void loop(){
     if(varBomba){
       digitalWrite(bomba,HIGH);
       digitalWrite(valvula,HIGH);
-      varVazao = 12;     
+//      if(auxPubVazao != 0){
+//      freq = auxPubVazao/((millis()-tempo)/1000);     //frequencia de pulsos
+//      varVazao = (1/8.25)*freq;
+//      }
+//      Serial.print("Vazao: ");
+//      Serial.println(varVazao);
+//      Serial.print("tempo: ");
+//      Serial.println((millis()-tempo));
+//      Serial.println("Pulsos: ");
+//      Serial.println(auxPubVazao);
+//      Serial.println("Freq: ");
+//      Serial.println(freq);
+//      tempo = millis();
+      varVazao  =12;
+          
     }else{
       varVazao = 0;
       digitalWrite(bomba,LOW);
       digitalWrite(valvula,LOW);
     }
-    //delay(100);
+    
     
 }
 ////*****************ITERRUPÇÂO PARA vazao*********************************
